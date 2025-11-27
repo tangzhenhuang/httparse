@@ -931,13 +931,39 @@ pub fn parse_uri<'a>(bytes: &mut Bytes<'a>) -> Result<&'a str> {
 
 #[inline]
 fn parse_code(bytes: &mut Bytes<'_>) -> Result<u16> {
-    let hundreds = expect!(bytes.next() == b'0'..=b'9' => Err(Error::Status));
-    let tens = expect!(bytes.next() == b'0'..=b'9' => Err(Error::Status));
-    let ones = expect!(bytes.next() == b'0'..=b'9' => Err(Error::Status));
+    let mut status: u32 = 0;
+    let mut length = 0;
+    loop {
+        let b = bytes.peek();
+        match b {
+            Some(b) => {
+                match b {
+                    b'0'..=b'9' => {
+                        if length >= 5 { // u16 should not more than 65535(length 5)
+                            return Err(Error::Status)
+                        }
+                        unsafe { bytes.bump() };
+                        status = status * 10 + (b - b'0') as u32;
+                        length += 1;
+                    }
+                    b' ' => {
+                        bytes.slice();
+                        break;
+                    }
+                    _ => {
+                        return Err(Error::Status)
+                    }
+                }
 
-    Ok(Status::Complete((hundreds - b'0') as u16 * 100 +
-        (tens - b'0') as u16 * 10 +
-        (ones - b'0') as u16))
+            }
+            None => return Ok(Status::Partial),
+        }
+    }
+    if status > 65535 {
+        return Err(Error::Status)
+    }
+    Ok(Status::Complete(status as u16))
+
 }
 
 /// Parse a buffer of bytes as headers.
